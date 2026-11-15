@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Devices
@@ -24,14 +25,22 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -51,70 +60,219 @@ class MainActivity : ComponentActivity() {
                 onPrimary = Ink,
                 onBackground = Color.White,
                 onSurface = Color.White
-            )) { AirLinkHome() }
+            )) {
+                AirLinkApp()
+            }
         }
     }
 }
 
 @Composable
-private fun AirLinkHome() {
+private fun AirLinkApp() {
+    var page by remember { mutableStateOf("login") }
     Surface(modifier = Modifier.fillMaxSize(), color = Ink) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+        when (page) {
+            "login" -> LoginScreen(
+                onPreview = { page = "home" },
+                onCreateAccount = { page = "signup" }
+            )
+            "signup" -> SignupScreen(
+                onBack = { page = "login" },
+                onPreview = { page = "home" }
+            )
+            "pair" -> PairDeviceScreen(onBack = { page = "home" })
+            else -> HomeScreen(onPair = { page = "pair" }, onLogout = { page = "login" })
+        }
+    }
+}
+
+@Composable
+private fun BrandHeader(subtitle: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text("AIRLINK", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
+        Text(subtitle, color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun LoginScreen(onPreview: () -> Unit, onCreateAccount: () -> Unit) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        BrandHeader("Welcome back")
+        Spacer(Modifier.height(10.dp))
+        Text("Sign in to manage your trusted devices.", color = Muted)
+        Spacer(Modifier.height(28.dp))
+        OutlinedTextField(
+            value = email,
+            onValueChange = { email = it; message = "" },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Email address") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it; message = "" },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Password") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation()
+        )
+        Spacer(Modifier.height(18.dp))
+        Button(
+            onClick = {
+                message = if (email.isBlank() || password.isBlank()) {
+                    "Enter your email and password."
+                } else {
+                    "Authentication backend is not connected yet. Use preview to explore the UI."
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
+        ) { Text("Sign in", fontWeight = FontWeight.Bold) }
+        if (message.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(message, color = Muted, fontSize = 12.sp)
+        }
+        TextButton(onClick = onCreateAccount, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("Create an account", color = Mint)
+        }
+        TextButton(onClick = onPreview, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("Preview dashboard (demo)", color = Muted)
+        }
+    }
+}
+
+@Composable
+private fun SignupScreen(onBack: () -> Unit, onPreview: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        BrandHeader("Create account")
+        Spacer(Modifier.height(24.dp))
+        OutlinedTextField(value = name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Full name") }, singleLine = true)
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(value = email, onValueChange = { email = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Email address") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(value = password, onValueChange = { password = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = {
+            message = if (name.isBlank() || email.isBlank() || password.length < 8) {
+                "Enter all details. Password must be at least 8 characters."
+            } else {
+                "Account service is not connected yet. No account has been created."
+            }
+        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)) {
+            Text("Create account", fontWeight = FontWeight.Bold)
+        }
+        if (message.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(message, color = Muted, fontSize = 12.sp)
+        }
+        TextButton(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back to sign in", color = Mint) }
+        TextButton(onClick = onPreview, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Preview dashboard (demo)", color = Muted) }
+    }
+}
+
+@Composable
+private fun PairDeviceScreen(onBack: () -> Unit) {
+    var code by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        TextButton(onClick = onBack) { Text("← Back", color = Mint) }
+        BrandHeader("Pair a device")
+        Spacer(Modifier.height(10.dp))
+        Text("Enter the one-time code shown on the phone you want to connect to.", color = Muted)
+        Spacer(Modifier.height(22.dp))
+        OutlinedTextField(
+            value = code,
+            onValueChange = { value -> code = value.filter { it.isLetterOrDigit() }.take(8).uppercase(); message = "" },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("8-character pairing code") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
+        )
+        Spacer(Modifier.height(14.dp))
+        Button(
+            onClick = {
+                message = if (code.length != 8) {
+                    "Enter the complete 8-character code."
+                } else {
+                    "Secure pairing service is not connected yet. No device has been paired."
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
+        ) { Text("Continue", fontWeight = FontWeight.Bold) }
+        if (message.isNotBlank()) {
+            Spacer(Modifier.height(12.dp))
+            Text(message, color = Muted, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("Pairing will require approval on the other phone. Codes will expire and can be revoked.", color = Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun HomeScreen(onPair: () -> Unit, onLogout: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(22.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("AIRLINK", color = Mint, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
-                    Text("Your devices, connected.", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                }
-                Icon(Icons.Rounded.Security, contentDescription = "Security", tint = Mint)
-            }
+            BrandHeader("Your devices, connected.")
+            Icon(Icons.Rounded.Security, contentDescription = "Security", tint = Mint)
+        }
 
-            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(24.dp)) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("REMOTE CONNECTION", color = Muted, fontSize = 11.sp, letterSpacing = 2.sp)
-                    Text("Connect to a device", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Pair with another phone using a one-time code. The other device must approve each remote session.",
-                        color = Muted,
-                        fontSize = 14.sp
-                    )
-                    Button(
-                        onClick = { },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
-                    ) {
-                        Icon(Icons.Rounded.Devices, contentDescription = null)
-                        Text("  Pair a device", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            Text("REMOTE TOOLS", color = Muted, fontSize = 11.sp, letterSpacing = 2.sp)
-            ToolCard(Icons.Rounded.Monitor, "Screen sharing", "View a screen after the device owner approves.")
-            ToolCard(Icons.Rounded.CameraAlt, "Remote camera", "Start a visible, owner-approved camera session.")
-            ToolCard(Icons.Rounded.Mic, "Microphone audio", "Use live audio only during an approved session.")
-
-            Spacer(Modifier.height(2.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF102A2A))) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.Security, contentDescription = null, tint = Mint)
-                    Column {
-                        Text("Privacy first", color = Mint, fontWeight = FontWeight.SemiBold)
-                        Text("Every session is visible, revocable, and time-limited.", color = Muted, fontSize = 12.sp)
-                    }
+        Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(24.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("REMOTE CONNECTION", color = Muted, fontSize = 11.sp, letterSpacing = 2.sp)
+                Text("Connect to a device", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("Pair with another phone using a one-time code. The other device must approve each remote session.", color = Muted, fontSize = 14.sp)
+                Button(onClick = onPair, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)) {
+                    Icon(Icons.Rounded.Devices, contentDescription = null)
+                    Text("  Pair a device", fontWeight = FontWeight.Bold)
                 }
             }
         }
+
+        Text("REMOTE TOOLS", color = Muted, fontSize = 11.sp, letterSpacing = 2.sp)
+        ToolCard(Icons.Rounded.Monitor, "Screen sharing", "View a screen after the device owner approves.")
+        ToolCard(Icons.Rounded.CameraAlt, "Remote camera", "Start a visible, owner-approved camera session.")
+        ToolCard(Icons.Rounded.Mic, "Microphone audio", "Use live audio only during an approved session.")
+
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF102A2A))) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Security, contentDescription = null, tint = Mint)
+                Column {
+                    Text("Privacy first", color = Mint, fontWeight = FontWeight.SemiBold)
+                    Text("Every session is visible, revocable, and time-limited.", color = Muted, fontSize = 12.sp)
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = onLogout, modifier = Modifier.align(Alignment.End)) { Text("Exit preview", color = Muted) }
     }
 }
 
