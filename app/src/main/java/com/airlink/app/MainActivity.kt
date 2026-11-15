@@ -1,6 +1,12 @@
 package com.airlink.app
 
 import android.os.Bundle
+import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Context
 import android.media.projection.MediaProjectionManager
 import androidx.activity.ComponentActivity
@@ -35,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -375,17 +382,75 @@ private fun HomeScreen(onPair: () -> Unit, onLogout: () -> Unit) {
 @Composable
 private fun ScreenSharePermissionCard() {
     val context = LocalContext.current
-    var status by remember { mutableStateOf("Android will ask the device owner before screen capture can begin.") }
+    var status by remember { mutableStateOf("Screen capture starts only after Android's system approval.") }
+    var active by remember { mutableStateOf(false) }
     val projectionManager = remember {
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
-    val permissionLauncher = rememberLauncherForActivityResult(
+
+    val projectionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        status = if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
-            "Permission granted for this request. Live streaming is not connected yet."
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
+            val serviceIntent = Intent(context, ScreenCaptureService::class.java).apply {
+                action = ScreenCaptureService.ACTION_START
+                putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
+                putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, result.data)
+            }
+            try {
+                context.startForegroundService(serviceIntent)
+                status = "Starting a visible screen-capture session. Remote streaming is not connected yet."
+            } catch (_: Exception) {
+                status = "Could not start screen capture. Please try again while AirLink is open."
+            }
         } else {
-            "Screen sharing was not approved. No screen content was captured."
+            status = "Screen sharing was not approved. No screen content was captured."
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+        } else {
+            status = "Allow notifications to keep the active capture and Stop control visible."
+        }
+    }
+
+    val stateReceiver = remember(context) {
+        object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                active = intent?.getBooleanExtra(ScreenCaptureService.EXTRA_ACTIVE, false) == true
+                status = if (active) {
+                    "Screen capture is active on this device. Frames are discarded locally; nothing is sent remotely."
+                } else {
+                    "Screen capture is stopped."
+                }
+            }
+        }
+    }
+
+    DisposableEffect(context, stateReceiver) {
+        val filter = IntentFilter(ScreenCaptureService.ACTION_STATE_CHANGED)
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.registerReceiver(stateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            context.registerReceiver(stateReceiver, filter)
+        }
+        onDispose {
+            try { context.unregisterReceiver(stateReceiver) } catch (_: IllegalArgumentException) { }
+        }
+    }
+
+    val startCapture = {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
         }
     }
 
@@ -398,15 +463,34 @@ private fun ScreenSharePermissionCard() {
                 Icon(Icons.Rounded.Monitor, contentDescription = null, tint = Mint)
                 Column {
                     Text("Screen sharing", fontWeight = FontWeight.SemiBold)
-                    Text("Request Android's system screen-capture approval.", color = Muted, fontSize = 12.sp)
+                    Text("Start a visible local capture session.", color = Muted, fontSize = 12.sp)
                 }
             }
             Button(
-                onClick = { permissionLauncher.launch(projectionManager.createScreenCaptureIntent()) },
+                onClick = {
+                    if (active) {
+                        context.startService(
+                            Intent(context, ScreenCaptureService::class.java)
+                                .setAction(ScreenCaptureService.ACTION_STOP)
+                        )
+                    } else {
+                        startCapture()
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
-            ) { Text("Request screen permission", fontWeight = FontWeight.Bold) }
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (active) Color(0xFFB84F5A) else Mint,
+                    contentColor = if (active) Color.White else Ink
+                )
+            ) {
+                Text(if (active) "Stop screen capture" else "Start screen capture", fontWeight = FontWeight.Bold)
+            }
             Text(status, color = Muted, fontSize = 12.sp)
+            Text(
+                "Android approval is required for every session. The ongoing notification also has a Stop action. Live WebRTC delivery is not implemented yet.",
+                color = Muted,
+                fontSize = 11.sp
+            )
         }
     }
 }
