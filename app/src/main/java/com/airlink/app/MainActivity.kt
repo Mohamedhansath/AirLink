@@ -225,7 +225,7 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
                 }
             }
             override fun onEvent(event: org.json.JSONObject) {
-                mainExecutor.execute {
+                mainHandler.post {
                     when (event.optString("type")) {
                         "connected" -> { connected = true; status = "Secure server connection is active." }
                         "pair:code" -> {
