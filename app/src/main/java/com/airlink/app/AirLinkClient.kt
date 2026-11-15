@@ -6,7 +6,6 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import okhttp3.*
 import org.json.JSONObject
-import java.net.URLEncoder
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -76,8 +75,11 @@ object AirLinkClient {
 
     private fun connectSocket(base: String, token: String, events: Events) {
         val wsBase = base.replaceFirst("https://", "wss://")
-        val encoded = URLEncoder.encode(token, Charsets.UTF_8.name())
-        val request = Request.Builder().url("$wsBase/ws?token=$encoded").build()
+        // Keep long-lived credentials out of URL/query strings, which may be logged.
+        val request = Request.Builder()
+            .url("$wsBase/ws")
+            .header("Authorization", "Bearer $token")
+            .build()
         socket?.close(1000, "Reconnect")
         socket = http.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
