@@ -23,7 +23,7 @@ curl -X POST http://localhost:8080/v1/devices/register \
   -d '{"deviceName":"My Android"}'
 ```
 
-The response contains a device ID and a one-time device token. Keep the token in Android Keystore-backed storage; do not log or commit it. Connect to `ws://localhost:8080/ws?token=DEVICE_TOKEN` for local development.
+The response contains a device ID and a one-time device token. Keep the token in Android Keystore-backed storage; do not log or commit it. Connect to `ws://localhost:8080/ws` for local development and send `Authorization: Bearer DEVICE_TOKEN` as the WebSocket handshake header. The Android client uses `wss://` and the same header for deployed servers. Tokens are not placed in URL query strings.
 
 ## WebSocket message flow
 
@@ -38,7 +38,7 @@ The response contains a device ID and a one-time device token. Keep the token in
 
 - Device records, pairings, and sessions are in-memory and disappear on restart. Add a durable database, account identity, device revocation, and audit events before production.
 - This prototype uses a simple in-process IP rate limiter. Use a shared rate limiter behind a trusted proxy in production and configure proxy trust deliberately.
-- The WebSocket token is currently passed as a query parameter for simplicity; production should use a short-lived, single-use WebSocket ticket to avoid URL/log leakage.
+- The WebSocket handshake now uses the Authorization header instead of a query parameter, reducing accidental credential exposure in URL logs. A short-lived, single-use WebSocket ticket is still recommended for production.
 - Deploy only behind HTTPS/WSS, restrict allowed origins, rotate secrets, add abuse monitoring, and test reconnect/replay behavior.
 - Configure authenticated TURN credentials for reliable NAT traversal. No TURN credentials or media relay are bundled here.
 - Signaling does not capture or transmit screen, camera, or microphone media. Android must implement MediaProjection and eligible foreground-service flows, show persistent indicators, and obtain the device owner's explicit approval for each session.
