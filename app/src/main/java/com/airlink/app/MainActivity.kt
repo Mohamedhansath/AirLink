@@ -1,7 +1,11 @@
 package com.airlink.app
 
 import android.os.Bundle
+import android.content.Context
+import android.media.projection.MediaProjectionManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -350,7 +354,7 @@ private fun HomeScreen(onPair: () -> Unit, onLogout: () -> Unit) {
         }
 
         Text("REMOTE TOOLS", color = Muted, fontSize = 11.sp, letterSpacing = 2.sp)
-        ToolCard(Icons.Rounded.Monitor, "Screen sharing", "View a screen after the device owner approves.")
+        ScreenSharePermissionCard()
         ToolCard(Icons.Rounded.CameraAlt, "Remote camera", "Start a visible, owner-approved camera session.")
         ToolCard(Icons.Rounded.Mic, "Microphone audio", "Use live audio only during an approved session.")
 
@@ -365,6 +369,45 @@ private fun HomeScreen(onPair: () -> Unit, onLogout: () -> Unit) {
         }
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onLogout, modifier = Modifier.align(Alignment.End)) { Text("Exit preview", color = Muted) }
+    }
+}
+
+@Composable
+private fun ScreenSharePermissionCard() {
+    val context = LocalContext.current
+    var status by remember { mutableStateOf("Android will ask the device owner before screen capture can begin.") }
+    val projectionManager = remember {
+        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        status = if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
+            "Permission granted for this request. Live streaming is not connected yet."
+        } else {
+            "Screen sharing was not approved. No screen content was captured."
+        }
+    }
+
+    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Monitor, contentDescription = null, tint = Mint)
+                Column {
+                    Text("Screen sharing", fontWeight = FontWeight.SemiBold)
+                    Text("Request Android's system screen-capture approval.", color = Muted, fontSize = 12.sp)
+                }
+            }
+            Button(
+                onClick = { permissionLauncher.launch(projectionManager.createScreenCaptureIntent()) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
+            ) { Text("Request screen permission", fontWeight = FontWeight.Bold) }
+            Text(status, color = Muted, fontSize = 12.sp)
+        }
     }
 }
 
