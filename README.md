@@ -58,3 +58,8 @@ The Pair a device screen now supports:
 5. Approving or declining incoming pairing requests on the receiving phone.
 
 Set the backend URL to your deployed HTTPS origin (for example, `https://api.example.com`). Do not use a placeholder URL. The backend must be running and reachable from both phones. This integration has been committed but has not yet been compiled or tested on physical Android devices. Pairing does not enable screen, camera, microphone, or remote control; those require separate Android permission and session-consent implementations.
+
+
+## Android screen-capture consent preflight
+
+The dashboard now includes a Screen sharing card that launches Android's official MediaProjection consent prompt from an explicit user tap. If the owner declines, AirLink reports that no screen content was captured. If approved, the UI reports that approval was granted for that request only. This is a permission-flow milestone, not a working remote screen stream: there is no MediaProjection foreground service, frame capture pipeline, WebRTC video track, or remote viewer integration yet. The permission result must be consumed immediately by a properly declared foreground service in a later implementation; it must never be retained as silent/background access.
