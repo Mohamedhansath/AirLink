@@ -19,9 +19,9 @@ The repository contains an initial Android scaffold with a Compose dashboard, si
 
 - Android: Kotlin, Jetpack Compose
 - Real-time media: WebRTC
-- Signaling/API: Node.js + WebSocket (planned)
+- Signaling/API: Node.js + Express + WebSocket (prototype scaffold added)
 - Relay: TURN server (planned)
-- Authentication and device registry: backend service (planned)
+- Authentication and device registry: in-memory prototype registry (not production-ready)
 
 ## Important Android limitations
 
@@ -34,8 +34,15 @@ Open this project in Android Studio, allow Gradle sync, then run the app configu
 ## Milestones
 
 1. Android scaffold and dashboard
-2. Pairing, authentication, and device registry
+2. Pairing, authentication, and device registry (backend prototype scaffolded)
 3. Consent-based screen sharing
 4. Camera and microphone streaming
 5. WebRTC signaling, TURN fallback, and reconnect
 6. Testing, hardening, and release APK
+
+
+## Backend prototype
+
+A Node.js signaling prototype is available in `server/`. It includes device-token registration, expiring one-time pairing codes, owner approval/denial, session approval/stop events, and guarded WebRTC signaling relay. See [server/README.md](server/README.md) for setup and the message protocol.
+
+**Not live yet:** the Android app is not connected to this backend, media capture/streaming is not implemented, and the backend has not been deployed. The prototype keeps state in memory and requires production hardening (persistent storage, identity, secure WebSocket tickets, shared rate limiting, HTTPS/WSS, and TURN configuration) before public use.
