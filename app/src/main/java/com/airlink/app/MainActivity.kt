@@ -43,6 +43,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 private val Ink = Color(0xFF0B1020)
 private val Panel = Color(0xFF151D32)
@@ -189,44 +192,130 @@ private fun SignupScreen(onBack: () -> Unit, onPreview: () -> Unit) {
 
 @Composable
 private fun PairDeviceScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var serverUrl by remember { mutableStateOf("https://YOUR_SERVER_HOST") }
+    var deviceName by remember { mutableStateOf("My Android phone") }
     var code by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf("Register this phone or reconnect a previously registered device.") }
+    var requestId by remember { mutableStateOf("") }
+    var requesterName by remember { mutableStateOf("") }
+    var connected by remember { mutableStateOf(false) }
+    val mainExecutor = remember(context) { context.mainExecutor }
+
+    val events = remember(context) {
+        object : AirLinkClient.Events {
+            override fun onStatus(message: String) {
+                mainExecutor.execute {
+                    status = message
+                    if (message.startsWith("Connected securely")) connected = true
+                }
+            }
+            override fun onEvent(event: org.json.JSONObject) {
+                mainExecutor.execute {
+                    when (event.optString("type")) {
+                        "connected" -> { connected = true; status = "Secure server connection is active." }
+                        "pair:code" -> {
+                            code = event.optString("code")
+                            status = "Your one-time code is ready. It expires in ${event.optInt("expiresInSeconds") / 60} min."
+                        }
+                        "pair:approval_required" -> {
+                            requestId = event.optString("requestId")
+                            requesterName = event.optString("requester", "Another device")
+                            status = "Pairing approval required from $requesterName."
+                        }
+                        "pair:waiting" -> status = "Code accepted. Waiting for approval on the other phone."
+                        "pair:approved" -> {
+                            requestId = ""
+                            status = "Device pairing approved. Peer: ${event.optString("peerDeviceId")}"
+                        }
+                        "pair:denied" -> { requestId = ""; status = "Pairing request was declined." }
+                        "error" -> status = "Server: ${event.optString("message", "Request failed.")}"
+                        else -> status = "Server event: ${event.optString("type")}"
+                    }
+                }
+            }
+        }
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
         TextButton(onClick = onBack) { Text("← Back", color = Mint) }
         BrandHeader("Pair a device")
-        Spacer(Modifier.height(10.dp))
-        Text("Enter the one-time code shown on the phone you want to connect to.", color = Muted)
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(8.dp))
+        Text("Connect both phones to the same AirLink server. Pairing requires approval on the other phone.", color = Muted)
+        Spacer(Modifier.height(18.dp))
         OutlinedTextField(
-            value = code,
-            onValueChange = { value -> code = value.filter { it.isLetterOrDigit() }.take(8).uppercase(); message = "" },
+            value = serverUrl,
+            onValueChange = { serverUrl = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("8-character pairing code") },
+            label = { Text("Backend HTTPS URL") },
+            singleLine = true
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = deviceName,
+            onValueChange = { deviceName = it.take(48) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("This device name") },
+            singleLine = true
+        )
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = { AirLinkClient.registerAndConnect(context, serverUrl, deviceName, events) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
+        ) { Text("Register this phone & connect", fontWeight = FontWeight.Bold) }
+        TextButton(
+            onClick = { AirLinkClient.connectSaved(context, events) },
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        ) { Text("Reconnect registered phone", color = Mint) }
+        Spacer(Modifier.height(10.dp))
+        Text(if (connected) "● Connected" else "○ Not connected", color = if (connected) Mint else Muted, fontSize = 12.sp)
+        Spacer(Modifier.height(14.dp))
+        Button(
+            onClick = { AirLinkClient.createPairingCode() },
+            enabled = connected,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Panel, contentColor = Mint)
+        ) { Text("Generate one-time pairing code") }
+        if (code.isNotBlank()) {
+            Text("YOUR CODE", color = Muted, fontSize = 11.sp, letterSpacing = 2.sp)
+            Text(code, color = Mint, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = code.takeIf { it.length != 8 } ?: "",
+            onValueChange = { code = it.filter(Char::isLetterOrDigit).take(8).uppercase() },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Enter another phone's 8-character code") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
         )
-        Spacer(Modifier.height(14.dp))
         Button(
-            onClick = {
-                message = if (code.length != 8) {
-                    "Enter the complete 8-character code."
-                } else {
-                    "Secure pairing service is not connected yet. No device has been paired."
-                }
-            },
+            onClick = { AirLinkClient.joinPairingCode(code) },
+            enabled = connected && code.length == 8,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
-        ) { Text("Continue", fontWeight = FontWeight.Bold) }
-        if (message.isNotBlank()) {
-            Spacer(Modifier.height(12.dp))
-            Text(message, color = Muted, fontSize = 12.sp)
+        ) { Text("Request pairing", fontWeight = FontWeight.Bold) }
+        if (requestId.isNotBlank()) {
+            Spacer(Modifier.height(14.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Pairing approval", color = Mint, fontWeight = FontWeight.Bold)
+                    Text("$requesterName wants to pair with this phone.", color = Color.White)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { AirLinkClient.approvePairing(requestId) }, colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)) { Text("Approve") }
+                        TextButton(onClick = { AirLinkClient.denyPairing(requestId) }) { Text("Decline", color = Muted) }
+                    }
+                }
+            }
         }
-        Spacer(Modifier.height(18.dp))
-        Text("Pairing will require approval on the other phone. Codes will expire and can be revoked.", color = Muted, fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
+        Text(status, color = Muted, fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
+        Text("Use a deployed HTTPS backend URL. Device credentials are encrypted with Android Keystore. Camera, microphone and screen capture are not enabled by pairing.", color = Muted, fontSize = 12.sp)
     }
 }
 
