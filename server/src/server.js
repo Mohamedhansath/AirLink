@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -81,7 +82,7 @@ app.get("/v1/devices/me", authenticate, (req, res) => {
 });
 
 function cryptoRandomId() {
-  return createPairingCode() + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  return randomUUID();
 }
 
 server.on("upgrade", (req, socket, head) => {
