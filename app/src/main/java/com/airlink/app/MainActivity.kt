@@ -43,6 +43,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -200,12 +202,12 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
     var requestId by remember { mutableStateOf("") }
     var requesterName by remember { mutableStateOf("") }
     var connected by remember { mutableStateOf(false) }
-    val mainExecutor = remember(context) { context.mainExecutor }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     val events = remember(context) {
         object : AirLinkClient.Events {
             override fun onStatus(message: String) {
-                mainExecutor.execute {
+                mainHandler.post {
                     status = message
                     if (message.startsWith("Connected securely")) connected = true
                 }
