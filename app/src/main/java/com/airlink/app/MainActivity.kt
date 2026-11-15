@@ -197,7 +197,8 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var serverUrl by remember { mutableStateOf("https://YOUR_SERVER_HOST") }
     var deviceName by remember { mutableStateOf("My Android phone") }
-    var code by remember { mutableStateOf("") }
+    var generatedCode by remember { mutableStateOf("") }
+    var inputCode by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("Register this phone or reconnect a previously registered device.") }
     var requestId by remember { mutableStateOf("") }
     var requesterName by remember { mutableStateOf("") }
@@ -217,7 +218,7 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
                     when (event.optString("type")) {
                         "connected" -> { connected = true; status = "Secure server connection is active." }
                         "pair:code" -> {
-                            code = event.optString("code")
+                            generatedCode = event.optString("code")
                             status = "Your one-time code is ready. It expires in ${event.optInt("expiresInSeconds") / 60} min."
                         }
                         "pair:approval_required" -> {
@@ -282,22 +283,22 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Panel, contentColor = Mint)
         ) { Text("Generate one-time pairing code") }
-        if (code.isNotBlank()) {
+        if (generatedCode.isNotBlank()) {
             Text("YOUR CODE", color = Muted, fontSize = 11.sp, letterSpacing = 2.sp)
-            Text(code, color = Mint, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
+            Text(generatedCode, color = Mint, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
         }
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
-            value = code.takeIf { it.length != 8 } ?: "",
-            onValueChange = { code = it.filter(Char::isLetterOrDigit).take(8).uppercase() },
+            value = inputCode,
+            onValueChange = { inputCode = it.filter(Char::isLetterOrDigit).take(8).uppercase() },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Enter another phone's 8-character code") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
         )
         Button(
-            onClick = { AirLinkClient.joinPairingCode(code) },
-            enabled = connected && code.length == 8,
+            onClick = { AirLinkClient.joinPairingCode(inputCode) },
+            enabled = connected && inputCode.length == 8,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
         ) { Text("Request pairing", fontWeight = FontWeight.Bold) }
