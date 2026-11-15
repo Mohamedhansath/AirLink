@@ -98,7 +98,7 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  const token = url.searchParams.get("token");
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
   const tokenHash = token ? hashSecret(token) : "";
   const deviceEntry = [...devices.entries()].find(([, value]) => value.tokenHash === tokenHash);
   if (!deviceEntry) {
