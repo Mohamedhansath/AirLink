@@ -4,7 +4,7 @@ AirLink is an Android-to-Android remote assistance project focused on consent-ba
 
 ## Project status
 
-The repository contains an initial Android scaffold with a Compose dashboard, sign-in/account-creation UI, and an 8-character pairing-code entry UI. These account and pairing screens are prototypes only: no authentication provider, pairing API, or live device connection is wired yet. Real-time transport and device-side capture remain later milestones and must be tested on physical Android devices.
+The repository contains an Android Compose app with a backend-connected device registration and WebSocket pairing client. The client stores its device token encrypted with Android Keystore and supports one-time pairing-code generation/join plus explicit pairing approval. Account sign-in remains a UI prototype; real-time media and device-side capture are not implemented yet.
 
 ## Planned capabilities
 
@@ -46,3 +46,15 @@ Open this project in Android Studio, allow Gradle sync, then run the app configu
 A Node.js signaling prototype is available in `server/`. It includes device-token registration, expiring one-time pairing codes, owner approval/denial, session approval/stop events, and guarded WebRTC signaling relay. See [server/README.md](server/README.md) for setup and the message protocol.
 
 **Not live yet:** the Android app is not connected to this backend, media capture/streaming is not implemented, and the backend has not been deployed. The prototype keeps state in memory and requires production hardening (persistent storage, identity, secure WebSocket tickets, shared rate limiting, HTTPS/WSS, and TURN configuration) before public use.
+
+
+## Android backend connection
+
+The Pair a device screen now supports:
+1. Registering this phone against a deployed HTTPS backend.
+2. Reconnecting with the encrypted device credential stored using Android Keystore.
+3. Opening an authenticated WSS connection.
+4. Creating or entering an expiring one-time pairing code.
+5. Approving or declining incoming pairing requests on the receiving phone.
+
+Set the backend URL to your deployed HTTPS origin (for example, `https://api.example.com`). Do not use a placeholder URL. The backend must be running and reachable from both phones. This integration has been committed but has not yet been compiled or tested on physical Android devices. Pairing does not enable screen, camera, microphone, or remote control; those require separate Android permission and session-consent implementations.
