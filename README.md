@@ -9,10 +9,10 @@ The repository contains an Android Compose app with a backend-connected device r
 ## Planned capabilities
 
 - Secure device pairing and revocable trusted-device records
-- Consent-based screen sharing using Android MediaProjection
+- Consent-based screen sharing using Android MediaProjection (visible local capture service scaffolded)
 - Camera and microphone sessions started by the device owner while the app is visible
 - WebRTC media transport with authenticated signaling and TURN fallback
-- Visible foreground-service notifications and persistent session indicators
+- Visible foreground-service notification with a Stop action for local screen capture
 - Immediate stop controls, session expiry, and audit history
 
 ## Platform and architecture
@@ -62,4 +62,6 @@ Set the backend URL to your deployed HTTPS origin (for example, `https://api.exa
 
 ## Android screen-capture consent preflight
 
-The dashboard now includes a Screen sharing card that launches Android's official MediaProjection consent prompt from an explicit user tap. If the owner declines, AirLink reports that no screen content was captured. If approved, the UI reports that approval was granted for that request only. This is a permission-flow milestone, not a working remote screen stream: there is no MediaProjection foreground service, frame capture pipeline, WebRTC video track, or remote viewer integration yet. The permission result must be consumed immediately by a properly declared foreground service in a later implementation; it must never be retained as silent/background access.
+The Screen sharing card requests notification permission on Android 13+ and then launches Android's official MediaProjection consent prompt after an explicit user tap. Each session requires fresh system consent. When approved, AirLink starts a non-exported `mediaProjection` foreground service with an ongoing notification and a Stop action. The app UI also exposes a Stop button. The service responds to system revocation, releases its virtual display and image buffers, and does not restart automatically. Captured ImageReader frames are immediately closed; no image is saved or sent to another device.
+
+**Not remote streaming yet:** this milestone validates the visible local capture lifecycle only. There is no WebRTC encoder/video track or remote viewer connected yet. Device pairing does not silently start capture, and the MediaProjection token is not persisted or reused. Android requires user consent for each projection session and restricts a projection token to one virtual-display creation.
