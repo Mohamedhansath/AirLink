@@ -4,7 +4,7 @@ AirLink is an Android-to-Android remote assistance project focused on consent-ba
 
 ## Project status
 
-This repository is the initial Android project scaffold. The dashboard and product architecture are the first milestone; real-time transport and device-side capture are later milestones and must be tested on physical Android devices.
+The repository contains an initial Android scaffold with a Compose dashboard, sign-in/account-creation UI, and an 8-character pairing-code entry UI. These account and pairing screens are prototypes only: no authentication provider, pairing API, or live device connection is wired yet. Real-time transport and device-side capture remain later milestones and must be tested on physical Android devices.
 
 ## Planned capabilities
 
