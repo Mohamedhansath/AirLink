@@ -213,6 +213,11 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
     var status by remember { mutableStateOf("Register this phone or reconnect a previously registered device.") }
     var requestId by remember { mutableStateOf("") }
     var requesterName by remember { mutableStateOf("") }
+    var peerDeviceId by remember { mutableStateOf("") }
+    var sessionRequestId by remember { mutableStateOf("") }
+    var sessionRequesterName by remember { mutableStateOf("") }
+    var sessionPending by remember { mutableStateOf(false) }
+    var sessionActive by remember { mutableStateOf(false) }
     var connected by remember { mutableStateOf(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
@@ -240,9 +245,41 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
                         "pair:waiting" -> status = "Code accepted. Waiting for approval on the other phone."
                         "pair:approved" -> {
                             requestId = ""
-                            status = "Device pairing approved. Peer: ${event.optString("peerDeviceId")}"
+                            peerDeviceId = event.optString("peerDeviceId")
+                            status = "Device pairing approved. Peer: ${peerDeviceId}"
                         }
                         "pair:denied" -> { requestId = ""; status = "Pairing request was declined." }
+                        "session:approval_required" -> {
+                            sessionRequestId = event.optString("requestId")
+                            sessionRequesterName = event.optString("requester", "Paired device")
+                            peerDeviceId = event.optString("requesterDeviceId", peerDeviceId)
+                            sessionPending = true
+                            status = "Screen-sharing approval required. Review the request below."
+                        }
+                        "session:waiting" -> {
+                            peerDeviceId = event.optString("peerDeviceId", peerDeviceId)
+                            sessionPending = true
+                            status = "Waiting for the other device owner to approve screen sharing."
+                        }
+                        "session:approved" -> {
+                            peerDeviceId = event.optString("peerDeviceId", peerDeviceId)
+                            sessionRequestId = ""
+                            sessionPending = false
+                            sessionActive = true
+                            status = "Support session approved (${event.optString("role", "connected")}). Media streaming is not attached yet."
+                        }
+                        "session:denied" -> {
+                            sessionRequestId = ""
+                            sessionPending = false
+                            sessionActive = false
+                            status = "The device owner declined the screen-sharing request."
+                        }
+                        "session:stopped", "session:expired", "session:cancelled" -> {
+                            sessionRequestId = ""
+                            sessionPending = false
+                            sessionActive = false
+                            status = "Support session ended. No remote media is active."
+                        }
                         "error" -> status = "Server: ${event.optString("message", "Request failed.")}"
                         else -> status = "Server event: ${event.optString("type")}"
                     }
@@ -313,6 +350,56 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
         ) { Text("Request pairing", fontWeight = FontWeight.Bold) }
+        if (peerDeviceId.isNotBlank()) {
+            Spacer(Modifier.height(14.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("TRUSTED DEVICE", color = Mint, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.5.sp)
+                    Text("Paired peer: ${peerDeviceId.take(18)}…", color = Color.White, fontSize = 12.sp)
+                    Text(
+                        "Request the other device to share its screen. Its owner must approve the request before any signaling is allowed.",
+                        color = Muted,
+                        fontSize = 12.sp
+                    )
+                    Button(
+                        onClick = { AirLinkClient.requestSession(peerDeviceId) },
+                        enabled = connected && !sessionPending && !sessionActive,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
+                    ) { Text("Request screen-sharing session", fontWeight = FontWeight.Bold) }
+                    if (sessionActive) {
+                        Text("Session approval is active. Screen capture still requires the owner to start it and accept Android's system prompt. Live video is not connected yet.", color = Muted, fontSize = 12.sp)
+                        TextButton(
+                            onClick = { AirLinkClient.stopSession(peerDeviceId) },
+                            modifier = Modifier.align(Alignment.End)
+                        ) { Text("Stop support session", color = Color(0xFFFF8C96)) }
+                    } else if (sessionPending && sessionRequestId.isBlank()) {
+                        Text("A request is waiting for the other device owner.", color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+        if (sessionRequestId.isNotBlank()) {
+            Spacer(Modifier.height(14.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("SCREEN-SHARING REQUEST", color = Mint, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.5.sp)
+                    Text(
+                        "${sessionRequesterName} wants to view this phone's screen. Approve only if you recognize this paired device and intend to share your screen.",
+                        color = Color.White
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { AirLinkClient.approveSession(sessionRequestId) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Ink)
+                        ) { Text("Approve") }
+                        TextButton(onClick = { AirLinkClient.denySession(sessionRequestId) }) {
+                            Text("Decline", color = Muted)
+                        }
+                    }
+                }
+            }
+        }
         if (requestId.isNotBlank()) {
             Spacer(Modifier.height(14.dp))
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
@@ -329,7 +416,7 @@ private fun PairDeviceScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Text(status, color = Muted, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-        Text("Use a deployed HTTPS backend URL. Device credentials are encrypted with Android Keystore. Camera, microphone and screen capture are not enabled by pairing.", color = Muted, fontSize = 12.sp)
+        Text("Use a deployed HTTPS backend URL. Device credentials are encrypted with Android Keystore. Pairing never starts capture. Session approval enables signaling only; the screen owner must separately start MediaProjection and accept Android's system prompt. Remote video is not implemented yet.", color = Muted, fontSize = 12.sp)
     }
 }
 
