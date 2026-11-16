@@ -10,6 +10,7 @@ import android.os.Build
 import android.content.Context
 import android.media.projection.MediaProjectionManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
@@ -96,7 +97,7 @@ private fun AirLinkApp() {
                 onBack = { page = "login" },
                 onPreview = { page = "home" }
             )
-            "pair" -> PairDeviceScreen(onBack = { page = "home" })
+            "pair" -> PairDeviceScreen(onBack = { AirLinkClient.stop(); page = "home" })
             else -> HomeScreen(onPair = { page = "pair" }, onLogout = { page = "login" })
         }
     }
@@ -205,6 +206,7 @@ private fun SignupScreen(onBack: () -> Unit, onPreview: () -> Unit) {
 
 @Composable
 private fun PairDeviceScreen(onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
     val context = LocalContext.current
     var serverUrl by remember { mutableStateOf("https://YOUR_SERVER_HOST") }
     var deviceName by remember { mutableStateOf("My Android phone") }
