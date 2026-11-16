@@ -20,7 +20,13 @@ const sockets = new Map();       // deviceId -> websocket
 const pairingCodes = new Map();  // codeHash -> { ownerId, expiresAt }
 const pending = new Map();       // requestId -> { ownerId, requesterId, expiresAt }
 const paired = new Set();        // sorted device-id pair key
-const sessions = new Map();      // pair key -> { approvedBy, startedAt }
+const sessions = new Map();      // pair key -> { approvedBy, requesterId, startedAt }
+const pendingSessions = new Map(); // requestId -> { ownerId, requesterId, expiresAt }
+const configuredSessionRequestTtl = Number(process.env.SESSION_REQUEST_TTL_SECONDS || 60);
+const SESSION_REQUEST_TTL_MS =
+  (Number.isFinite(configuredSessionRequestTtl)
+    ? Math.min(300, Math.max(30, configuredSessionRequestTtl))
+    : 60) * 1000;
 
 const pairKey = (a, b) => [a, b].sort().join(":");
 const send = (ws, data) => {
@@ -161,33 +167,130 @@ wss.on("connection", (ws) => {
       return send(ws, { type: "pair:approved", peerDeviceId: request.requesterId });
     }
 
-    if (message.type === "session:approve" || message.type === "session:stop") {
-      const peerId = message.peerDeviceId;
-      const key = typeof peerId === "string" ? pairKey(deviceId, peerId) : "";
+    if (message.type === "session:request") {
+      const peerId = typeof message.peerDeviceId === "string" ? message.peerDeviceId : "";
+      const key = peerId ? pairKey(deviceId, peerId) : "";
       if (!key || !paired.has(key)) return error(ws, "not_paired", "Devices must be paired first.");
-      if (message.type === "session:stop") {
-        sessions.delete(key);
-        send(sockets.get(peerId), { type: "session:stopped", by: deviceId });
-        return send(ws, { type: "session:stopped", by: deviceId });
+      if (sessions.has(key)) return error(ws, "session_active", "A support session is already active.");
+      if (!sockets.has(peerId)) return error(ws, "peer_offline", "The paired device is not connected.");
+
+      for (const request of pendingSessions.values()) {
+        if (pairKey(request.ownerId, request.requesterId) === key && request.expiresAt > Date.now()) {
+          return error(ws, "session_pending", "A support-session request is already waiting for approval.");
+        }
       }
-      // The device receiving the remote-support session must explicitly approve it.
-      sessions.set(key, { approvedBy: deviceId, startedAt: Date.now() });
-      send(sockets.get(peerId), { type: "session:approved", by: deviceId });
-      return send(ws, { type: "session:approved", by: deviceId });
+
+      const requestId = cryptoRandomId();
+      pendingSessions.set(requestId, {
+        ownerId: peerId,
+        requesterId: deviceId,
+        expiresAt: Date.now() + SESSION_REQUEST_TTL_MS
+      });
+      send(sockets.get(peerId), {
+        type: "session:approval_required",
+        requestId,
+        requesterDeviceId: deviceId,
+        peerDeviceId: deviceId,
+        requester: devices.get(deviceId)?.name || "Device"
+      });
+      return send(ws, {
+        type: "session:waiting",
+        requestId,
+        peerDeviceId: peerId,
+        expiresInSeconds: Math.floor(SESSION_REQUEST_TTL_MS / 1000)
+      });
+    }
+
+    if (message.type === "session:approve" || message.type === "session:deny") {
+      const requestId = typeof message.requestId === "string" ? message.requestId : "";
+      const request = pendingSessions.get(requestId);
+      if (!request || request.ownerId !== deviceId || request.expiresAt < Date.now()) {
+        pendingSessions.delete(requestId);
+        return error(ws, "invalid_session_request", "This support-session request is no longer valid.");
+      }
+      pendingSessions.delete(requestId);
+
+      if (message.type === "session:deny") {
+        send(sockets.get(request.requesterId), {
+          type: "session:denied",
+          by: deviceId,
+          peerDeviceId: deviceId
+        });
+        return send(ws, {
+          type: "session:denied",
+          by: deviceId,
+          peerDeviceId: request.requesterId
+        });
+      }
+
+      const key = pairKey(request.ownerId, request.requesterId);
+      if (!paired.has(key) || sessions.has(key)) {
+        return error(ws, "session_unavailable", "The paired support session is no longer available.");
+      }
+      // The approving device is the screen owner; the requester is the viewer.
+      sessions.set(key, {
+        approvedBy: deviceId,
+        requesterId: request.requesterId,
+        startedAt: Date.now()
+      });
+      send(sockets.get(request.requesterId), {
+        type: "session:approved",
+        by: deviceId,
+        peerDeviceId: deviceId,
+        role: "viewer"
+      });
+      return send(ws, {
+        type: "session:approved",
+        by: deviceId,
+        peerDeviceId: request.requesterId,
+        role: "screen_owner"
+      });
+    }
+
+    if (message.type === "session:stop") {
+      const peerId = typeof message.peerDeviceId === "string" ? message.peerDeviceId : "";
+      const key = peerId ? pairKey(deviceId, peerId) : "";
+      if (!key || !paired.has(key)) return error(ws, "not_paired", "Devices must be paired first.");
+      const session = sessions.get(key);
+      if (!session) return error(ws, "session_not_active", "There is no active support session.");
+      const expectedPeer = session.approvedBy === deviceId ? session.requesterId : session.approvedBy;
+      if (peerId !== expectedPeer) return error(ws, "invalid_peer", "The requested peer does not match this session.");
+
+      sessions.delete(key);
+      send(sockets.get(peerId), {
+        type: "session:stopped",
+        by: deviceId,
+        peerDeviceId: deviceId
+      });
+      return send(ws, {
+        type: "session:stopped",
+        by: deviceId,
+        peerDeviceId: peerId
+      });
     }
 
     if (["rtc:offer", "rtc:answer", "rtc:ice"].includes(message.type)) {
-      const peerId = message.peerDeviceId;
-      const key = typeof peerId === "string" ? pairKey(deviceId, peerId) : "";
+      const peerId = typeof message.peerDeviceId === "string" ? message.peerDeviceId : "";
+      const key = peerId ? pairKey(deviceId, peerId) : "";
       const session = sessions.get(key);
-      if (!key || !paired.has(key) || !session) return error(ws, "session_not_approved", "An approved support session is required.");
-      if (session.approvedBy !== peerId && session.approvedBy !== deviceId) {
-        return error(ws, "session_not_approved", "Session approval is invalid.");
+      if (!key || !paired.has(key) || !session) {
+        return error(ws, "session_not_approved", "An explicitly approved support session is required.");
       }
+
+      const expectedPeer = session.approvedBy === deviceId ? session.requesterId : session.approvedBy;
+      if (peerId !== expectedPeer) return error(ws, "invalid_peer", "The signaling peer does not match this session.");
+      if (message.type === "rtc:offer" && deviceId !== session.approvedBy) {
+        return error(ws, "invalid_offer_sender", "Only the screen-owning device may send the WebRTC offer.");
+      }
+      if (message.type === "rtc:answer" && deviceId !== session.requesterId) {
+        return error(ws, "invalid_answer_sender", "Only the requesting viewer may send the WebRTC answer.");
+      }
+
       const payload = message.payload;
       if (!payload || typeof payload !== "object" || JSON.stringify(payload).length > 12_000) {
         return error(ws, "invalid_payload", "Signaling payload is invalid or too large.");
       }
+      if (!sockets.has(peerId)) return error(ws, "peer_offline", "The paired device is not connected.");
       return send(sockets.get(peerId), { type: message.type, fromDeviceId: deviceId, payload });
     }
 
@@ -195,6 +298,32 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
+    for (const [requestId, request] of pendingSessions) {
+      if (request.ownerId === deviceId || request.requesterId === deviceId) {
+        pendingSessions.delete(requestId);
+        const peerId = request.ownerId === deviceId ? request.requesterId : request.ownerId;
+        send(sockets.get(peerId), {
+          type: "session:cancelled",
+          by: deviceId,
+          peerDeviceId: deviceId,
+          reason: "peer_disconnected"
+        });
+      }
+    }
+
+    for (const [key, session] of sessions) {
+      if (session.approvedBy === deviceId || session.requesterId === deviceId) {
+        sessions.delete(key);
+        const peerId = session.approvedBy === deviceId ? session.requesterId : session.approvedBy;
+        send(sockets.get(peerId), {
+          type: "session:stopped",
+          by: deviceId,
+          peerDeviceId: deviceId,
+          reason: "peer_disconnected"
+        });
+      }
+    }
+
     if (sockets.get(deviceId) === ws) sockets.delete(deviceId);
   });
 });
@@ -203,6 +332,19 @@ const sweep = setInterval(() => {
   const now = Date.now();
   for (const [key, value] of pairingCodes) if (value.expiresAt < now) pairingCodes.delete(key);
   for (const [key, value] of pending) if (value.expiresAt < now) pending.delete(key);
+  for (const [requestId, request] of pendingSessions) {
+    if (request.expiresAt < now) {
+      pendingSessions.delete(requestId);
+      send(sockets.get(request.requesterId), {
+        type: "session:expired",
+        peerDeviceId: request.ownerId
+      });
+      send(sockets.get(request.ownerId), {
+        type: "session:expired",
+        peerDeviceId: request.requesterId
+      });
+    }
+  }
 }, 30_000);
 sweep.unref();
 
