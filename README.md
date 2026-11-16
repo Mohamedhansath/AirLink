@@ -1,67 +1,47 @@
 # AirLink
 
-AirLink is an Android-to-Android remote assistance project focused on consent-based screen sharing, camera sharing, microphone audio, and remote support over the internet.
+AirLink is an Android-to-Android remote-assistance prototype. Its design requires explicit device pairing, per-session owner approval, Android's system MediaProjection consent, visible foreground-service status, and revocable stop controls.
 
-## Project status
+## Implemented in the repository
 
-The repository contains an Android Compose app with a backend-connected device registration and WebSocket pairing client. The client stores its device token encrypted with Android Keystore and supports one-time pairing-code generation/join plus explicit pairing approval. Account sign-in remains a UI prototype; real-time media and device-side capture are not implemented yet.
+- Android app scaffold built with Kotlin and Jetpack Compose.
+- Node.js + Express + WebSocket prototype for device registration and one-time device pairing.
+- Android device credentials stored encrypted with Android Keystore.
+- Authenticated WebSocket handshake using an Authorization bearer header; the device token is not placed in the URL.
+- Pairing approval/decline UI on the receiving device.
+- Support-session request, owner approval/decline, stop, expiry, and disconnect cleanup in the backend protocol.
+- Android UI for requesting a paired device's screen and showing the screen owner's approval prompt.
+- Consent-gated Android client methods for sending WebRTC offer, answer, and ICE signaling after the server confirms an approved session.
+- Android MediaProjection consent flow and a non-exported `mediaProjection` foreground service.
+- Required `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_MEDIA_PROJECTION` permissions for the app's target SDK, with an ongoing notification and Stop action.
+- The MediaProjection result is used for that user-approved session only. System revocation or the visible Stop action releases the virtual display, image reader, projection, and foreground notification.
+- Captured frames are currently discarded locally; no image or video is saved or transmitted.
 
-## Planned capabilities
+## Not implemented yet
 
-- Secure device pairing and revocable trusted-device records
-- Consent-based screen sharing using Android MediaProjection (visible local capture service scaffolded)
-- Camera and microphone sessions started by the device owner while the app is visible
-- WebRTC media transport with authenticated signaling and TURN fallback
-- Visible foreground-service notification with a Stop action for local screen capture
-- Immediate stop controls, session expiry, and audit history
+- Android WebRTC `PeerConnection` creation and lifecycle.
+- A WebRTC video source/track connected to the MediaProjection capture surface.
+- Remote video rendering and a complete viewer experience.
+- TURN server deployment and authenticated, short-lived TURN credentials.
+- Camera and microphone streaming.
+- Production authentication/account service, durable device/session storage, device revocation, audit logs, and production abuse controls.
+- Full automated Android build and physical-device validation.
 
-## Platform and architecture
+**Important:** The repository does not currently provide live remote screen streaming. The signaling protocol can relay bounded WebRTC negotiation messages after explicit session approval, but no WebRTC media track is attached. The current Android capture service is a local lifecycle scaffold that discards frames.
 
-- Android: Kotlin, Jetpack Compose
-- Real-time media: WebRTC
-- Signaling/API: Node.js + Express + WebSocket (prototype scaffold added)
-- Relay: TURN server (planned)
-- Authentication and device registry: in-memory prototype registry (not production-ready)
+## Android privacy and consent
 
-## Important Android limitations
+A saved app permission does not grant unlimited background access. Android screen capture requires the official MediaProjection system consent flow for each session. AirLink does not bypass Android permission prompts, privacy indicators, foreground-service requirements, or device-owner approval. Pairing alone never starts screen capture. The screen owner must approve the support-session request and separately start capture through the app and Android system prompt. The ongoing notification provides a Stop action, and system revocation ends the capture.
 
-A saved app permission does not grant unlimited background access. Android restricts camera and microphone use to eligible foreground-service flows, and screen capture requires the system MediaProjection consent flow. AirLink will not bypass Android permission prompts, privacy indicators, or device-owner approval.
+## Architecture
 
-## Build
+- Android: Kotlin, Jetpack Compose, Android MediaProjection.
+- Signaling/API: Node.js, Express, WebSocket.
+- Planned media transport: WebRTC with TURN fallback.
+- Current backend storage: in-memory prototype maps; not production-ready.
 
-Open this project in Android Studio, allow Gradle sync, then run the app configuration on an Android device or emulator.
+## Build and run
 
-## Milestones
+Open the Android project in Android Studio, allow Gradle sync, then build and run on an Android device or emulator. The backend setup and message protocol are documented in [server/README.md](server/README.md).
 
-1. Android scaffold and dashboard
-2. Pairing, authentication, and device registry (backend prototype scaffolded)
-3. Consent-based screen sharing
-4. Camera and microphone streaming
-5. WebRTC signaling, TURN fallback, and reconnect
-6. Testing, hardening, and release APK
-
-
-## Backend prototype
-
-A Node.js signaling prototype is available in `server/`. It includes device-token registration, expiring one-time pairing codes, owner approval/denial, session approval/stop events, and guarded WebRTC signaling relay. See [server/README.md](server/README.md) for setup and the message protocol.
-
-**Not live yet:** the Android app is not connected to this backend, media capture/streaming is not implemented, and the backend has not been deployed. The prototype keeps state in memory and requires production hardening (persistent storage, identity, secure WebSocket tickets, shared rate limiting, HTTPS/WSS, and TURN configuration) before public use.
-
-
-## Android backend connection
-
-The Pair a device screen now supports:
-1. Registering this phone against a deployed HTTPS backend.
-2. Reconnecting with the encrypted device credential stored using Android Keystore.
-3. Opening an authenticated WSS connection.
-4. Creating or entering an expiring one-time pairing code.
-5. Approving or declining incoming pairing requests on the receiving phone.
-
-Set the backend URL to your deployed HTTPS origin (for example, `https://api.example.com`). Do not use a placeholder URL. The backend must be running and reachable from both phones. This integration has been committed but has not yet been compiled or tested on physical Android devices. Pairing does not enable screen, camera, microphone, or remote control; those require separate Android permission and session-consent implementations.
-
-
-## Android screen-capture consent preflight
-
-The Screen sharing card requests notification permission on Android 13+ and then launches Android's official MediaProjection consent prompt after an explicit user tap. Each session requires fresh system consent. When approved, AirLink starts a non-exported `mediaProjection` foreground service with an ongoing notification and a Stop action. The app UI also exposes a Stop button. The service responds to system revocation, releases its virtual display and image buffers, and does not restart automatically. Captured ImageReader frames are immediately closed; no image is saved or sent to another device.
-
-**Not remote streaming yet:** this milestone validates the visible local capture lifecycle only. There is no WebRTC encoder/video track or remote viewer connected yet. Device pairing does not silently start capture, and the MediaProjection token is not persisted or reused. Android requires user consent for each projection session and restricts a projection token to one virtual-display creation.
+The Android app and backend have not been verified on physical devices in this milestone. Do not treat a successful GitHub commit as proof of Android compilation, device testing, deployment, or live streaming.
