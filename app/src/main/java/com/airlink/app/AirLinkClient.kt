@@ -11,6 +11,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import java.util.concurrent.ConcurrentHashMap
 
 object AirLinkClient {
     private val http = OkHttpClient.Builder()
@@ -18,6 +19,7 @@ object AirLinkClient {
         .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
         .build()
     private var socket: WebSocket? = null
+    private val approvedPeers = ConcurrentHashMap.newKeySet<String>()
 
     interface Events {
         fun onStatus(message: String)
@@ -74,6 +76,7 @@ object AirLinkClient {
     }
 
     private fun connectSocket(base: String, token: String, events: Events) {
+        approvedPeers.clear()
         val wsBase = base.replaceFirst("https://", "wss://")
         // Keep long-lived credentials out of URL/query strings, which may be logged.
         val request = Request.Builder()
@@ -86,8 +89,18 @@ object AirLinkClient {
                 events.onStatus("Connected securely to AirLink server.")
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
-                try { events.onEvent(JSONObject(text)) }
-                catch (_: Exception) { events.onStatus("Received an unreadable server message.") }
+                try {
+                    val event = JSONObject(text)
+                    val peerId = event.optString("peerDeviceId")
+                    when (event.optString("type")) {
+                        "session:approved" -> if (peerId.isNotBlank()) approvedPeers.add(peerId)
+                        "session:denied", "session:stopped", "session:expired", "session:cancelled" ->
+                            if (peerId.isNotBlank()) approvedPeers.remove(peerId)
+                    }
+                    events.onEvent(event)
+                } catch (_: Exception) {
+                    events.onStatus("Received an unreadable server message.")
+                }
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 events.onStatus("Server connection closing.")
@@ -102,12 +115,48 @@ object AirLinkClient {
     fun joinPairingCode(code: String) = send(JSONObject().put("type", "pair:join").put("code", code))
     fun approvePairing(requestId: String) = send(JSONObject().put("type", "pair:approve").put("requestId", requestId))
     fun denyPairing(requestId: String) = send(JSONObject().put("type", "pair:deny").put("requestId", requestId))
+
+    fun requestSession(peerDeviceId: String) =
+        send(JSONObject().put("type", "session:request").put("peerDeviceId", peerDeviceId))
+
+    fun approveSession(requestId: String) =
+        send(JSONObject().put("type", "session:approve").put("requestId", requestId))
+
+    fun denySession(requestId: String) =
+        send(JSONObject().put("type", "session:deny").put("requestId", requestId))
+
+    fun stopSession(peerDeviceId: String) =
+        send(JSONObject().put("type", "session:stop").put("peerDeviceId", peerDeviceId))
+
+    // These methods are ready for a future PeerConnection, but are accepted only
+    // after the backend confirms explicit owner approval for this peer.
+    fun sendRtcOffer(peerDeviceId: String, payload: JSONObject): Boolean =
+        sendRtcSignal("rtc:offer", peerDeviceId, payload)
+
+    fun sendRtcAnswer(peerDeviceId: String, payload: JSONObject): Boolean =
+        sendRtcSignal("rtc:answer", peerDeviceId, payload)
+
+    fun sendRtcIce(peerDeviceId: String, payload: JSONObject): Boolean =
+        sendRtcSignal("rtc:ice", peerDeviceId, payload)
+
+    private fun sendRtcSignal(type: String, peerDeviceId: String, payload: JSONObject): Boolean {
+        if (peerDeviceId.isBlank() || !approvedPeers.contains(peerDeviceId)) return false
+        return send(
+            JSONObject()
+                .put("type", type)
+                .put("peerDeviceId", peerDeviceId)
+                .put("payload", payload)
+        )
+    }
+
     fun stop() {
+        approvedPeers.clear()
         socket?.close(1000, "User disconnected")
         socket = null
     }
-    private fun send(message: JSONObject) {
-        socket?.send(message.toString())
+
+    private fun send(message: JSONObject): Boolean {
+        return socket?.send(message.toString()) == true
     }
 
     private fun normalizeBaseUrl(value: String): String? {
