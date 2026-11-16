@@ -174,8 +174,13 @@ wss.on("connection", (ws) => {
       if (sessions.has(key)) return error(ws, "session_active", "A support session is already active.");
       if (!sockets.has(peerId)) return error(ws, "peer_offline", "The paired device is not connected.");
 
-      for (const request of pendingSessions.values()) {
-        if (pairKey(request.ownerId, request.requesterId) === key && request.expiresAt > Date.now()) {
+      const now = Date.now();
+      for (const [existingRequestId, request] of pendingSessions) {
+        if (request.expiresAt <= now) {
+          pendingSessions.delete(existingRequestId);
+          continue;
+        }
+        if (pairKey(request.ownerId, request.requesterId) === key) {
           return error(ws, "session_pending", "A support-session request is already waiting for approval.");
         }
       }
